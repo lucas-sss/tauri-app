@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>hello from rust</title>
+</head>
+
+<body>
+  <label for="pinInput">PIN码</label>
+  <input id="pinInput" type="text" name="pin" placeholder="请输入pin码" /> &emsp;
+  <input type="button" value="登录" onclick="login()" /> &emsp;
+  <input type="button" value="获取mac" onclick="getMac()" /> &emsp;
+  <input type="button" value="退出登录" onclick="logout()" />
+
+  <div id="result" style="width: 200px;height: 10px; border: 1px; border-color: black; margin-top: 100px;"></div>
+</body>
+<script>
+  const TAURI = window.__TAURI__;
+  // With the Tauri global script, enabled when `tauri.conf.json > build > withGlobalTauri` is set to true:
+  const invoke = window.__TAURI__.invoke;
+
+
+  function login() {
+    // Invoke the command
+    var pin = document.getElementById("pinInput").value;
+    console.log("用户输入pin码: " + pin);
+    if (pin.length != 6) {
+        alert("请输入6位PIN码");
+        return;
+    }
+
+    invoke('login', {param: pin})
+      .then((response) => {
+        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + response.data;
+        console.log(data);
+        document.getElementById("result").innerText = data;
+      })
+      .catch((error) => {
+        console.error(error);
+        document.getElementById("result").innerText = error;
+      })
+  }
+
+  function getMac() {
+
+    invoke('get_mac')
+      .then((response) => {
+        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + response.data;
+        console.log(data);
+        document.getElementById("result").innerText = data;
+      })
+      .catch((error) => {
+        console.error(error);
+        document.getElementById("result").innerText = error;
+      })
+  }
+
+  function logout() {
+    // Invoke the command
+    invoke('logout')
+      .then((response) => {
+        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + response.data;
+        console.log(data);
+        document.getElementById("result").innerText = data;
+      })
+      .catch((error) => {
+        console.error(error);
+        document.getElementById("result").innerText = error;
+      })
+  }
+
+</script>
+
+</html>
