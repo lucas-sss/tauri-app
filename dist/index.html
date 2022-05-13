@@ -12,7 +12,8 @@
   <input id="pinInput" type="text" name="pin" placeholder="请输入pin码" /> &emsp;
   <input type="button" value="登录" onclick="login()" /> &emsp;
   <input type="button" value="获取mac" onclick="getMac()" /> &emsp;
-  <input type="button" value="退出登录" onclick="logout()" />
+  <input type="button" value="生成登录数据" onclick="generateAuthData()" /> &emsp;
+  <input type="button" value="退出登录" onclick="logout()" /> &emsp;
 
   <div id="result" style="width: 200px;height: 10px; border: 1px; border-color: black; margin-top: 100px;"></div>
 </body>
@@ -32,6 +33,27 @@
     }
 
     invoke('login', {param: pin})
+      .then((response) => {
+        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + response.data;
+        console.log(data);
+        document.getElementById("result").innerText = data;
+      })
+      .catch((error) => {
+        console.error(error);
+        document.getElementById("result").innerText = error;
+      })
+  }
+
+  function generateAuthData() {
+    // Invoke the command
+    var pin = document.getElementById("pinInput").value;
+    console.log("用户输入pin码: " + pin);
+    if (pin.length != 6) {
+        alert("请输入6位PIN码");
+        return;
+    }
+
+    invoke('generate_auth_data', {pin: pin, role: 3})
       .then((response) => {
         var data = "code: "+ response.code + ", message: " + response.message + ", data: " + response.data;
         console.log(data);

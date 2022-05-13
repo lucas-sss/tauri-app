@@ -6,6 +6,7 @@ use std::ffi::c_void;
 use std::os::raw::c_int;
 use std::os::raw::c_uchar;
 use std::os::raw::c_uint;
+use std::ptr::null;
 use std::ptr::null_mut;
 
 // dll文件中的函数
@@ -14,16 +15,43 @@ use std::ptr::null_mut;
 type SKF_EnumDev = unsafe extern "stdcall" fn(u8, *mut c_char, &c_uint) -> u32;
 
 //连接设备
-// ULONG DEVAPI SKF_ConnectDev (LPSTR szName, DEVHANDLE *phDev)
+// ULONG DEVAPI SKF_ConnectDev(LPSTR szName, DEVHANDLE *phDev)
 type SKF_ConnectDev = unsafe extern "stdcall" fn(*const c_char, *mut *mut c_void) -> u32;
 
 // 断开连接
-// ULONG DEVAPI SKF_DisConnectDev (DEVHANDLE hDev)
+// ULONG DEVAPI SKF_DisConnectDev(DEVHANDLE hDev)
 type SKF_DisConnectDev = unsafe extern "stdcall" fn(*const c_void) -> u32;
 
 // 获取设备信息
-// ULONG DEVAPI SKF_GetDevInfo (DEVHANDLE hDev, DEVINFO *pDevInfo)
-type SKF_GetDevInfo = unsafe extern "stdcall" fn(*const c_void, *mut c_void) -> u32;
+// ULONG DEVAPI SKF_GetDevInfo(DEVHANDLE hDev, DEVINFO *pDevInfo)
+// type SKF_GetDevInfo = unsafe extern "stdcall" fn(*const c_void, *mut c_void) -> u32;
+type SKF_GetDevInfo = unsafe extern "stdcall" fn(*const c_void, *mut DEVINFO) -> u32;
+
+// 生成随机数
+// ULONG DEVAPI SKF_GenRandom(DEVHANDLE hDev, BYTE *pbRandom, ULONG ulRandomLen)
+type SKF_GenRandom = unsafe extern "stdcall" fn(*const c_void, *mut c_void, u32) -> u32;
+
+// 密码杂凑初始化
+// ULONG DEVAPI SKF_DigestInit(DEVHANDLE hDev, ULONG ulAlgID, ECCPUBLICKEYBLOB *pPubKey, unsigned char *pucID, ULONG ulIDLen, HANDLE *phHash)
+type SKF_DigestInit = unsafe extern "stdcall" fn(
+    *const c_void,
+    u32,
+    *mut ECCPUBLICKEYBLOB,
+    *mut c_char,
+    u32,
+    *mut *mut c_void,
+) -> u32;
+
+// 单组数据密码杂凑
+// ULONG DEVAPI SKF_Digest(HANDLE hHash, BYTE *pbData, ULONG ulDataLen, BYTE *pbHashData, ULONG *pulHashLen)
+
+// 多组数据密码杂凑
+// ULONG DEVAPI SKF_DigestUpdate(HANDLE hHash, BYTE *pbData, ULONG ulDataLen)
+type SKF_DigestUpdate = unsafe extern "stdcall" fn(*const c_void, *const c_void, u32) -> u32;
+
+// 结束密码杂凑
+// ULONG DEVAPI SKF_DigestFinal(HANDLE hHash, BYTE *pHashData, ULONG *pulHashLen)
+type SKF_DigestFinal = unsafe extern "stdcall" fn(*const c_void, *const c_void, *mut u32) -> u32;
 
 // 打开应用
 // ULONG DEVAPI SKF_OpenApplication(DEVHANDLE hDev, LPSTR szAppName, HAPPLICATION *phApplication)
@@ -42,6 +70,16 @@ type SKF_VerifyPIN = unsafe fn(*const c_void, u32, *const c_char, *mut u32) -> u
 // ULONG DEVAPI SKF_OpenContainer(HAPPLICATION hApplication, LPSTR szContainerName, HCONTAINER *phContainer)
 type SKF_OpenContainer =
     unsafe extern "stdcall" fn(*const c_void, *const c_char, *mut *mut c_void) -> u32;
+
+// ECC签名
+// ULONG DEVAPI SKF_ECCSignData (HCONTAINER hContainer, BYTE *pbData, ULONG ulDataLen, PECCSIGNATUREBLOB pSignature)
+type SKF_ECCSignData =
+    unsafe extern "stdcall" fn(*const c_void, *const c_void, u32, *mut ECCSIGNATUREBLOB) -> u32;
+
+// 导出数字证书
+// ULONG DEVAPI SKF_ExportCertificate(HCONTAINER hContainer, BOOL bSignFlag, BYTE* pbCert, ULONG *pulCertLen)
+type SKF_ExportCertificate =
+    unsafe extern "stdcall" fn(*const c_void, u8, *mut c_void, *mut u32) -> u32;
 
 // 关闭容器
 // ULONG DEVAPI SKF_CloseContainer(HCONTAINER hContainer)
@@ -114,6 +152,46 @@ impl DEVINFO {
             free_space: 0,
             reserved: [0u8; 64],
         }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ECCPUBLICKEYBLOB {
+    bit: u32,
+    x: [u8; 64],
+    y: [u8; 64],
+}
+
+impl ECCPUBLICKEYBLOB {
+    pub fn new() -> ECCPUBLICKEYBLOB {
+        ECCPUBLICKEYBLOB {
+            bit: 256,
+            x: [0u8; 64],
+            y: [0u8; 64],
+        }
+    }
+}
+
+pub struct ECCSIGNATUREBLOB {
+    r: [u8; 64],
+    s: [u8; 64],
+}
+
+impl ECCSIGNATUREBLOB {
+    pub fn new() -> ECCSIGNATUREBLOB {
+        ECCSIGNATUREBLOB {
+            r: [0u8; 64],
+            s: [0u8; 64],
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut str = String::from("");
+        let r = &self.r[31..63];
+        let s = &self.s[31..63];
+        str.push_str(&hex::encode(r).to_uppercase());
+        str.push_str(&hex::encode(s).to_uppercase());
+        return str;
     }
 }
 
@@ -196,10 +274,73 @@ impl SKFApi {
 
             let fn_skf_get_dev_info: Symbol<SKF_GetDevInfo> =
                 self.lib.get(b"SKF_GetDevInfo").unwrap();
-            ret = fn_skf_get_dev_info(DEV_HANDLER, dev_info as *mut c_void);
+            // ret = fn_skf_get_dev_info(DEV_HANDLER, dev_info as *mut c_void);
+            ret = fn_skf_get_dev_info(DEV_HANDLER, dev_info);
         }
 
         if ret != 0 {
+            return ret;
+        }
+
+        return 0;
+    }
+
+    pub fn skf_gen_random(&mut self, random: &mut [u8], len: u32) -> u32 {
+        let mut ret: u32 = 0;
+        unsafe {
+            let fn_skf_gen_random: Symbol<SKF_GenRandom> = self.lib.get(b"SKF_GenRandom").unwrap();
+            ret = fn_skf_gen_random(DEV_HANDLER, random.as_mut_ptr() as *mut c_void, len);
+        }
+        if ret != 0 {
+            println!("skf_gen_random -> SKF_GenRandom fail, ret: {:x}", ret);
+            return ret;
+        }
+        return 0;
+    }
+
+    pub fn skf_hash(&mut self, data: &[u8], data_len: u32, hash: &mut [u8; 32]) -> u32 {
+        let mut ret: u32 = 0;
+        let mut hash_len: u32 = 32;
+        //密码杂凑算法标识
+        let SGD_SM3: u32 = 0x00000001;
+        let mut HASH_HANDLER: *mut c_void = null_mut();
+        unsafe {
+            let fn_skf_digest_init: Symbol<SKF_DigestInit> =
+                self.lib.get(b"SKF_DigestInit").unwrap();
+            ret = fn_skf_digest_init(
+                DEV_HANDLER,
+                SGD_SM3,
+                null_mut(),
+                null_mut(),
+                0,
+                &mut HASH_HANDLER,
+            );
+        }
+        if ret != 0 {
+            println!("skf_hash -> SKF_DigestInit fail, ret: {:x}", ret);
+            return ret;
+        }
+        unsafe {
+            let fn_skf_digest_update: Symbol<SKF_DigestUpdate> =
+                self.lib.get(b"SKF_DigestUpdate").unwrap();
+            ret = fn_skf_digest_update(HASH_HANDLER, data.as_ptr() as *const c_void, data_len);
+        }
+        if ret != 0 {
+            println!("skf_hash -> SKF_DigestUpdate fail, ret: {:x}", ret);
+            return ret;
+        }
+
+        unsafe {
+            let fn_skf_digest_final: Symbol<SKF_DigestFinal> =
+                self.lib.get(b"SKF_DigestFinal").unwrap();
+            ret = fn_skf_digest_final(
+                HASH_HANDLER,
+                hash.as_mut_ptr() as *const c_void,
+                &mut hash_len,
+            );
+        }
+        if ret != 0 {
+            println!("skf_hash -> SKF_DigestFinal fail, ret: {:x}", ret);
             return ret;
         }
 
@@ -290,23 +431,6 @@ impl SKFApi {
         return 0;
     }
 
-    pub fn skf_close_container(&mut self) -> u32 {
-        let mut ret: u32 = 0;
-
-        if !self.con_open_success {}
-
-        unsafe {
-            let fn_skf_close_container: Symbol<SKF_CloseContainer> =
-                self.lib.get(b"SKF_CloseContainer").unwrap();
-            ret = fn_skf_close_container(CON_HANDLER);
-        }
-        if ret != 0 {
-            return ret;
-        }
-        self.con_open_success = false;
-        return 0;
-    }
-
     pub fn skf_verify_pin(&mut self, pin_str: &str, retry_count: *mut u32) -> u32 {
         println!("skf_verify_pin -> ready verify pin code: {}", pin_str);
         let mut ret: u32 = 0;
@@ -332,6 +456,75 @@ impl SKFApi {
         }
 
         self.pin_verify_success = true;
+        return 0;
+    }
+
+    pub fn skf_sign(
+        &mut self,
+        data: &[u8],
+        data_len: u32,
+        signature: &mut ECCSIGNATUREBLOB,
+    ) -> u32 {
+        let mut ret: u32 = 0;
+
+        unsafe {
+            let fn_skf_ecc_sign_data: Symbol<SKF_ECCSignData> =
+                self.lib.get(b"SKF_ECCSignData").unwrap();
+            ret = fn_skf_ecc_sign_data(
+                CON_HANDLER,
+                data.as_ptr() as *const c_void,
+                data_len,
+                signature,
+            );
+        }
+        if ret != 0 {
+            return ret;
+        }
+
+        return 0;
+    }
+
+    pub fn skf_export_cert(&mut self, sign: bool, data: &mut [u8], data_len: *mut u32) -> u32 {
+        let mut ret: u32 = 0;
+        unsafe {
+            let fn_skf_export_certificate: Symbol<SKF_ExportCertificate> =
+                self.lib.get(b"SKF_ExportCertificate").unwrap();
+            if sign {
+                ret = fn_skf_export_certificate(
+                    CON_HANDLER,
+                    1,
+                    data.as_mut_ptr() as *mut c_void,
+                    data_len,
+                );
+            } else {
+                ret = fn_skf_export_certificate(
+                    CON_HANDLER,
+                    0,
+                    data.as_mut_ptr() as *mut c_void,
+                    data_len,
+                );
+            }
+        }
+        if ret != 0 {
+            return ret;
+        }
+        return 0;
+    }
+
+    pub fn skf_close_container(&mut self) -> u32 {
+        let mut ret: u32 = 0;
+
+        if !self.con_open_success {}
+
+        unsafe {
+            let fn_skf_close_container: Symbol<SKF_CloseContainer> =
+                self.lib.get(b"SKF_CloseContainer").unwrap();
+            ret = fn_skf_close_container(CON_HANDLER);
+        }
+        if ret != 0 {
+            return ret;
+        }
+        self.con_open_success = false;
         return 0;
     }
 }

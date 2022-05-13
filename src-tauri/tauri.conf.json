@@ -1,6 +1,6 @@
 {
   "package": {
-    "productName": "tauri-app",
+    "productName": "SSLVPN安全网关管理客户端",
     "version": "0.1.0"
   },
   "build": {
@@ -54,9 +54,9 @@
     },
     "windows": [
       {
-        "title": "Tauri App",
-        "width": 800,
-        "height": 600,
+        "title": "SSLVPN安全网关管理客户端",
+        "width": 1440,
+        "height": 900,
         "resizable": true,
         "fullscreen": false
       }

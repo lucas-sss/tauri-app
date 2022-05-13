@@ -3,19 +3,19 @@
     windows_subsystem = "windows"
 )]
 
-mod skfapi;
 mod char_utils;
+mod skfapi;
 
-use crate::skfapi::{SKFApi, DEVINFO};
 use crate::char_utils::*;
+use crate::skfapi::{SKFApi, DEVINFO, ECCSIGNATUREBLOB};
 
 use libc::{c_uchar, c_uint, strlen};
 use libloading::{Library, Symbol};
+use std::fmt;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{hash, str::FromStr};
 use tauri::{State, Window};
-use std::fmt;
-
 
 use mac_address;
 
@@ -68,7 +68,7 @@ fn login(
         return Err("连接设备失败".to_string());
     }
     println!("连接设备成功");
-    
+
     let mut dev_info = DEVINFO::new();
     ret = skf_api.skf_get_dev_info(&mut dev_info);
     if ret != 0 {
@@ -89,11 +89,13 @@ fn login(
     }
     println!("打开应用成功");
 
-
-    let mut retry_count: u32 =0;
+    let mut retry_count: u32 = 0;
     ret = skf_api.skf_verify_pin(&param, &mut retry_count);
     if ret != 0 {
-        println!("PIN码验证失败, ret: {:x}, 剩余重试次数: {}", ret, retry_count);
+        println!(
+            "PIN码验证失败, ret: {:x}, 剩余重试次数: {}",
+            ret, retry_count
+        );
         let s = format!("PIN码验证失败, 剩余重试次数: {}", retry_count);
         return Err(s.to_string());
     }
@@ -107,7 +109,6 @@ fn login(
     }
     println!("打开容器成功");
 
-
     unsafe {
         IS_LOGIN = true;
     }
@@ -120,9 +121,7 @@ fn login(
 
 #[tauri::command]
 fn get_mac(window: Window, skf_context: State<AppContext>) -> Result<InvokeResponse, String> {
-    
     let mut mac = String::from("");
-    
 
     let name = String::from("WLAN");
     match mac_address::mac_address_by_name(&name) {
@@ -185,6 +184,136 @@ fn get_mac(window: Window, skf_context: State<AppContext>) -> Result<InvokeRespo
     })
 }
 
+enum AdminLabel {
+    SuperAdmin(u32),
+    SystemAdmin(u32),
+    SecurityAdmin(u32),
+    AuditorAdmin(u32),
+}
+
+impl AdminLabel {}
+
+fn convert_ukey_label(label: &str) -> u32 {
+    if label == "SuperAdmin" {
+        return 1;
+    }
+    if label == "SystemAdmin" {
+        return 2;
+    }
+    if label == "SecurityAdmin" {
+        return 3;
+    }
+    if label == "AuditorAdmin" {
+        return 4;
+    }
+    return 0;
+}
+
+#[tauri::command]
+fn generate_auth_data(
+    window: Window,
+    role: u32,
+    pin: String,
+    app_context: State<'_, AppContext>,
+) -> Result<InvokeResponse, String> {
+    println!("GenerateAuthData -> role: {}, pin: {}", role, pin);
+
+    let mut ret = 0;
+    let data = pin.as_bytes();
+    let mut auth_data = String::from("");
+    let mut token_y = String::from("");
+
+    if role < 1 || role > 4 {
+        return Err("选择角色不存在".to_string());
+    }
+
+    let mut skf_api = SKF_API.lock().unwrap();
+    // 检测ukey和选择角色是否匹配
+    let mut dev_info = DEVINFO::new();
+    ret = skf_api.skf_get_dev_info(&mut dev_info);
+    if ret != 0 {
+        println!("获取设备信息失败, ret: {:x}", ret);
+        return Err("获取设备信息失败".to_string());
+    }
+    let label_name = rust_arr_2_c_char(dev_info.label.to_vec());
+    println!("UKEY角色: {}", label_name);
+    if role != convert_ukey_label(&label_name) {
+        return Err("UKEY与角色不匹配".to_string());
+    }
+
+    //生成时间戳
+    let mut time_str = String::from("");
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(n) => time_str = n.as_millis().to_string(),
+        Err(_) => return Err("获取时间戳失败".to_string()),
+    }
+    auth_data.push_str(&time_str);
+    auth_data.push_str("||");
+    token_y.push_str(&time_str);
+
+    //对口令进行hash计算
+    let mut cipher_hash = [0u8; 32];
+    ret = skf_api.skf_hash(data, data.len() as u32, &mut cipher_hash);
+    if ret != 0 {
+        println!("Hash计算失败");
+        return Err("口令Hash计算失败".to_string());
+    }
+    let hex_cipher_hash = hex::encode(&cipher_hash).to_uppercase();
+    println!("hex_cipher_hash: {}", hex_cipher_hash);
+    auth_data.push_str(&hex_cipher_hash);
+    auth_data.push_str("||");
+    token_y.push_str(&hex_cipher_hash);
+
+    //生成随机数
+    let mut random = [0u8; 16];
+    ret = skf_api.skf_gen_random(&mut random, 16);
+    if ret != 0 {
+        println!("生成随机数失败, ret: {:x}", ret);
+        return Err("生成随机数失败".to_string());
+    }
+    let hex_random = hex::encode(&random).to_uppercase();
+    println!("hex_random: {}", hex_random);
+    auth_data.push_str(&hex_random);
+    auth_data.push_str("||");
+    token_y.push_str(&hex_random);
+
+    println!("token_y: {}", token_y);
+    let token_y_byte = token_y.as_bytes();
+    let mut token_y_hash = [0u8; 32];
+    ret = skf_api.skf_hash(token_y_byte, token_y_byte.len() as u32, &mut token_y_hash);
+    if ret != 0 {
+        println!("token哈希计算失败, ret: {:x}", ret);
+        return Err("token哈希计算失败".to_string());
+    }
+    let mut signature = ECCSIGNATUREBLOB::new();
+    ret = skf_api.skf_sign(&token_y_hash, 32, &mut signature);
+    if ret != 0 {
+        println!("token签名计算失败, ret: {:x}", ret);
+        return Err("token签名计算失败".to_string());
+    }
+    let sign_str = signature.to_string();
+    println!("sign_str: {}", token_y);
+    auth_data.push_str(&sign_str);
+    auth_data.push_str("||");
+
+    //导出签名证书
+    let mut cert = [0u8; 1024];
+    let mut cert_len: u32 = 1024;
+    ret = skf_api.skf_export_cert(true, &mut cert, &mut cert_len);
+    if ret != 0 {
+        println!("导出签名证书失败, ret: {:x}", ret);
+        return Err("导出签名证书失败".to_string());
+    }
+    let cert_str = rust_arr_2_c_char(cert.to_vec());
+    println!("cert_str: {}", cert_str);
+    auth_data.push_str(&cert_str);
+
+    Ok(InvokeResponse {
+        code: 0,
+        message: String::from("success"),
+        data: auth_data,
+    })
+}
 
 #[tauri::command]
 fn logout(window: Window, skf_context: State<AppContext>) -> Result<InvokeResponse, String> {
@@ -223,7 +352,12 @@ fn main() {
         // This is where you pass in your commands
         // .manage(SKFContext { skf_api: &SKF_API })
         .manage(AppContext {})
-        .invoke_handler(tauri::generate_handler![login, get_mac, logout])
+        .invoke_handler(tauri::generate_handler![
+            login,
+            generate_auth_data,
+            get_mac,
+            logout
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
