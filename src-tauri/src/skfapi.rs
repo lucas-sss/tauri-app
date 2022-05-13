@@ -36,7 +36,7 @@ type SKF_CloseApplication = unsafe extern "stdcall" fn(*const c_void) -> u32;
 
 // 验证PIN码
 // ULONG DEVAPI SKF_VerifyPIN (HAPPLICATION hApplication, ULONG ulPINType, LPSTR szPIN, ULONG *pulRetryCount)
-type SKF_VerifyPIN = unsafe  fn(*const c_void, u32, *const c_char, *mut u32) -> u32;
+type SKF_VerifyPIN = unsafe fn(*const c_void, u32, *const c_char, *mut u32) -> u32;
 
 // 打开容器
 // ULONG DEVAPI SKF_OpenContainer(HAPPLICATION hApplication, LPSTR szContainerName, HCONTAINER *phContainer)
@@ -81,16 +81,16 @@ pub struct VERSION {
 #[derive(Clone, Copy)]
 pub struct DEVINFO {
     pub version: VERSION,
-    pub  manufacturer: [u8; 64],
+    pub manufacturer: [u8; 64],
     pub issuer: [u8; 64],
-    pub  label: [u8; 32],
+    pub label: [u8; 32],
     pub serial_number: [u8; 32],
-    pub  hw_version: VERSION,
+    pub hw_version: VERSION,
     pub firmware_version: VERSION,
     pub alg_sym_cap: u32,
     pub alg_asym_cap: u32,
     pub alg_hash_cap: u32,
-    pub  dev_auth_alg_id: u32,
+    pub dev_auth_alg_id: u32,
     pub total_space: u32,
     pub free_space: u32,
     pub reserved: [u8; 64],
@@ -188,13 +188,12 @@ impl SKFApi {
         return 0;
     }
 
-
     pub fn skf_get_dev_info(&self, dev_info: *mut DEVINFO) -> u32 {
         let mut ret: u32 = 0;
 
         unsafe {
             // let mut dev_info = DEVINFO::new();
-            
+
             let fn_skf_get_dev_info: Symbol<SKF_GetDevInfo> =
                 self.lib.get(b"SKF_GetDevInfo").unwrap();
             ret = fn_skf_get_dev_info(DEV_HANDLER, dev_info as *mut c_void);
@@ -322,7 +321,7 @@ impl SKFApi {
             let fn_skf_verify_pin: Symbol<SKF_VerifyPIN> = self.lib.get(b"SKF_VerifyPIN").unwrap();
             ret = fn_skf_verify_pin(
                 APP_HANDLER,
-                1,//1:USER_TYPE, 0:ADMIN_TYPE
+                1, //1:USER_TYPE, 0:ADMIN_TYPE
                 pin.as_mut_ptr() as *const c_char,
                 retry_count,
             );

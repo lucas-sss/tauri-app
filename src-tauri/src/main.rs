@@ -122,27 +122,53 @@ fn login(
 fn get_mac(window: Window, skf_context: State<AppContext>) -> Result<InvokeResponse, String> {
     
     let mut mac = String::from("");
-    match mac_address::get_mac_address() {
-        Ok(Some(ma)) => {
-            println!("MAC addr = {}", ma);
-            println!("bytes = {:?}", ma.bytes());
-            mac.push_str(&ma.to_string());
-        }
-        Ok(None) => println!("No MAC address found."),
-        Err(e) => println!("{:?}", e),
-    }
+    
 
     let name = String::from("WLAN");
     match mac_address::mac_address_by_name(&name) {
         Ok(Some(ma)) => {
-            println!("MAC addr = {}", ma);
-            println!("bytes = {:?}", ma.bytes());
+            println!("WLAN MAC addr: {}", ma);
+            // println!("bytes = {:?}", ma.bytes());
             mac.push_str(&ma.to_string());
         }
         Ok(None) => println!("No MAC address found."),
         Err(e) => println!("{:?}", e),
     }
 
+    let name1 = String::from("本地连接");
+    match mac_address::mac_address_by_name(&name1) {
+        Ok(Some(ma)) => {
+            println!("本地连接 MAC addr = {}", ma);
+            if mac.len() > 0 {
+                mac.push_str(",");
+            }
+            mac.push_str(&ma.to_string());
+        }
+        Ok(None) => println!("No MAC address found."),
+        Err(e) => println!("{:?}", e),
+    }
+    let name2 = String::from("以太网");
+    match mac_address::mac_address_by_name(&name1) {
+        Ok(Some(ma)) => {
+            println!("以太网 MAC addr = {}", ma);
+            if mac.len() > 0 {
+                mac.push_str(",");
+            }
+            mac.push_str(&ma.to_string());
+        }
+        Ok(None) => println!("No MAC address found."),
+        Err(e) => println!("{:?}", e),
+    }
+
+    // match mac_address::get_mac_address() {
+    //     Ok(Some(ma)) => {
+    //         println!("MAC addr = {}", ma);
+    //         println!("bytes = {:?}", ma.bytes());
+    //         mac.push_str(&ma.to_string());
+    //     }
+    //     Ok(None) => println!("No MAC address found."),
+    //     Err(e) => println!("{:?}", e),
+    // }
 
     if mac.len() == 0 {
         return Ok(InvokeResponse {
