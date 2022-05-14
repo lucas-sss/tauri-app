@@ -1,13 +1,9 @@
 //#![allow(unused)]
-//use libc::*;
 use libc::c_char;
 use libloading::{Library, Symbol};
 use std::ffi::c_void;
 use std::mem;
-use std::os::raw::c_int;
-use std::os::raw::c_uchar;
 use std::os::raw::c_uint;
-use std::ptr::null;
 use std::ptr::null_mut;
 
 // dll文件中的函数
@@ -54,6 +50,8 @@ type SKF_DigestUpdate = unsafe extern "stdcall" fn(*const c_void, *const c_void,
 // ULONG DEVAPI SKF_DigestFinal(HANDLE hHash, BYTE *pHashData, ULONG *pulHashLen)
 type SKF_DigestFinal = unsafe extern "stdcall" fn(*const c_void, *const c_void, *mut u32) -> u32;
 
+// 枚举应用
+
 // 打开应用
 // ULONG DEVAPI SKF_OpenApplication(DEVHANDLE hDev, LPSTR szAppName, HAPPLICATION *phApplication)
 type SKF_OpenApplication =
@@ -71,6 +69,10 @@ type SKF_ChangePIN =
 // 关闭应用
 // ULONG DEVAPI SKF_CloseApplication(HAPPLICATION hApplication)
 type SKF_CloseApplication = unsafe extern "stdcall" fn(*const c_void) -> u32;
+
+// 枚举容器
+// ULONG DEVAPI SKF_EnumContainer(HAPPLICATION hApplication, LPSTR szContainerName,ULONG *pulSize)
+type SKF_EnumContainer = unsafe extern "stdcall" fn(*const c_void, *mut c_char, *mut u32) -> u32;
 
 // 打开容器
 // ULONG DEVAPI SKF_OpenContainer(HAPPLICATION hApplication, LPSTR szContainerName, HCONTAINER *phContainer)
@@ -95,6 +97,61 @@ type SKF_ExportPublicKey =
 // 关闭容器
 // ULONG DEVAPI SKF_CloseContainer(HCONTAINER hContainer)
 type SKF_CloseContainer = unsafe extern "stdcall" fn(*const c_void) -> u32;
+
+#[warn(dead_code)]
+pub mod skf_err_code {
+    pub static SAR_OK: u32 = 0x00000000; //成功
+    pub static SAR_FAIL: u32 = 0x0A000001; //失败
+    pub static SAR_UNKNOWNERR: u32 = 0x0A000002; //异常错误
+    pub static SAR_NOTSUPPORTYETERR: u32 = 0x0A000003; //不支持的服务
+    pub static SAR_FILEERR: u32 = 0x0A000004; //文件操作错误
+    pub static SAR_INVALIDHANDLEERR: u32 = 0x0A000005; //无效的句柄
+    pub static SAR_INVALIDPARAMERR: u32 = 0x0A000006; //无效的参数
+    pub static SAR_READFILEERR: u32 = 0x0A000007; //读文件错误
+    pub static SAR_WRITEFILEERR: u32 = 0x0A000008; //写文件错误
+    pub static SAR_NAMELENERR: u32 = 0x0A000009; //名称长度错误
+    pub static SAR_KEYUSAGEERR: u32 = 0x0A00000A; //密钥用途错误
+    pub static SAR_MODULUSLENERR: u32 = 0x0A00000B; //模的长度错误
+    pub static SAR_NOTINITIALIZEERR: u32 = 0x0A00000C; //未初始化
+    pub static SAR_OBJERR: u32 = 0x0A00000D; //对象错误
+    pub static SAR_MEMORYERR: u32 = 0x0A00000E; //内存错误
+    pub static SAR_TIMEOUTERR: u32 = 0x0A00000F; //超时
+    pub static SAR_INDATALENERR: u32 = 0x0A000010; //输入数据长度错误
+    pub static SAR_INDATAERR: u32 = 0x0A000011; //输入数据错误
+    pub static SAR_GENRANDERR: u32 = 0x0A000012; //生成随机数错误
+    pub static SAR_HASHOBJERR: u32 = 0x0A000013; //HASH 对象错
+    pub static SAR_HASHERR: u32 = 0x0A000014; //HASH 运算错误
+    pub static SAR_GENRSAKEYERR: u32 = 0x0A000015; //产生 RSA 密钥错
+    pub static SAR_RSAMODULUSLENERR: u32 = 0x0A000016; //RSA 密钥模长错误
+    pub static SAR_CSPIMPRTPUBKEYERR: u32 = 0x0A000017; //CSP 服务导入公钥错误
+    pub static SAR_RSAENCERR: u32 = 0x0A000018; //RSA 加密错误
+    pub static SAR_RSADECERR: u32 = 0x0A000019; //RSA 解密错误
+    pub static SAR_HASHNOTEQUALERR: u32 = 0x0A00001A; //HASH 值不相等
+    pub static SAR_KEYNOTFOUNTERR: u32 = 0x0A00001B; //密钥未发现
+    pub static SAR_CERTNOTFOUNTERR: u32 = 0x0A00001C; //证书未发现
+    pub static SAR_NOTEXPORTERR: u32 = 0x0A00001D; //对象未导出
+    pub static SAR_DECRYPTPADERR: u32 = 0x0A00001E; //解密时做补丁错误
+    pub static SAR_MACLENERR: u32 = 0x0A00001F; //MAC 长度错误
+    pub static SAR_BUFFER_TOO_SMALL: u32 = 0x0A000020; //缓冲区不足
+    pub static SAR_KEYINFOTYPEERR: u32 = 0x0A000021; //密钥类型错误
+    pub static SAR_NOT_EVENTERR: u32 = 0x0A000022; //无事件错误
+    pub static SAR_DEVICE_REMOVED: u32 = 0x0A000023; //设备已移除
+    pub static SAR_PIN_INCORRECT: u32 = 0x0A000024; //PIN 不正确
+    pub static SAR_PIN_LOCKED: u32 = 0x0A000025; //PIN 被锁死
+    pub static SAR_PIN_INVALID: u32 = 0x0A000026; //PIN 无效
+    pub static SAR_PIN_LEN_RANGE: u32 = 0x0A000027; //PIN 长度错误
+    pub static SAR_USER_ALREADY_LOGGED_IN: u32 = 0x0A000028; //用户已经登录
+    pub static SAR_USER_PIN_NOT_INITIALIZED: u32 = 0x0A000029; //没有初始化用户口令
+    pub static SAR_USER_TYPE_INVALID: u32 = 0x0A00002A; //PIN 类型错误
+    pub static SAR_APPLICATION_NAME_INVALID: u32 = 0x0A00002B; //应用名称无效
+    pub static SAR_APPLICATION_EXISTS: u32 = 0x0A00002C; //应用已经存在
+    pub static SAR_USER_NOT_LOGGED_IN: u32 = 0x0A00002D; //用户没有登录
+    pub static SAR_APPLICATION_NOT_EXISTS: u32 = 0x0A00002E; //应用不存在
+    pub static SAR_FILE_ALREADY_EXIST: u32 = 0x0A00002F; //文件已经存在
+    pub static SAR_NO_ROOM: u32 = 0x0A000030; //空间不足
+    pub static SAR_FILE_NOT_EXIST: u32 = 0x0A000031; //文件不存在
+    pub static SAR_REACH_MAX_CONTAINER_COUNT: u32 = 0x0A000032; //已达到最大可管理容器数
+}
 
 static LIBRARB_PATH: &str = "./dll64/SKFAPI30373.dll";
 
@@ -473,6 +530,44 @@ impl SKFApi {
             return ret;
         }
         self.app_open_success = false;
+        return 0;
+    }
+
+
+    pub fn skf_enum_container(&self, name_vec: &mut Vec<String>, device_num: &mut u32) -> u32 {
+        let mut name_list = [0u8; 256];
+        let mut len: u32 = 256;
+        let mut ret: u32 = 0;
+        unsafe {
+            let fn_skf_enum_container: Symbol<SKF_EnumContainer> = self.lib.get(b"SKF_EnumContainer").unwrap();
+            ret = fn_skf_enum_container(APP_HANDLER, name_list.as_mut_ptr() as *mut i8, &mut len);
+        }
+
+        if ret != 0 {
+            return ret;
+        }
+        if len == 0 {
+            *device_num = 0;
+            return 0;
+        }
+
+        let mut split_index: usize = 0;
+        for (i, _) in name_list.iter().enumerate() {
+            if i as u32 > len - 1 {
+                break;
+            }
+            if name_list[i] as char == '\0' {
+                let name_s = &name_list[split_index..i];
+                let device_name = unsafe { String::from_utf8_unchecked(name_s.to_vec()) };
+                name_vec.push(device_name);
+                split_index = i + 1;
+                *device_num += 1;
+
+                if name_list[i + 1] as char == '\0' {
+                    break;
+                }
+            }
+        }
         return 0;
     }
 
