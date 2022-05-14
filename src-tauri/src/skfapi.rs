@@ -3,6 +3,7 @@
 use libc::c_char;
 use libloading::{Library, Symbol};
 use std::ffi::c_void;
+use std::mem;
 use std::os::raw::c_int;
 use std::os::raw::c_uchar;
 use std::os::raw::c_uint;
@@ -36,8 +37,8 @@ type SKF_GenRandom = unsafe extern "stdcall" fn(*const c_void, *mut c_void, u32)
 type SKF_DigestInit = unsafe extern "stdcall" fn(
     *const c_void,
     u32,
-    *mut ECCPUBLICKEYBLOB,
-    *mut c_char,
+    *const ECCPUBLICKEYBLOB,
+    *const c_void,
     u32,
     *mut *mut c_void,
 ) -> u32;
@@ -80,6 +81,11 @@ type SKF_ECCSignData =
 // ULONG DEVAPI SKF_ExportCertificate(HCONTAINER hContainer, BOOL bSignFlag, BYTE* pbCert, ULONG *pulCertLen)
 type SKF_ExportCertificate =
     unsafe extern "stdcall" fn(*const c_void, u8, *mut c_void, *mut u32) -> u32;
+
+// 导出公钥
+// ULONG DEVAPI SKF_ExportPublicKey (HCONTAINER hContainer, BOOL bSignFlag, BYTE* pbBlob, ULONG* pulBlobLen)
+type SKF_ExportPublicKey =
+    unsafe extern "stdcall" fn(*const c_void, u8, *mut ECCPUBLICKEYBLOB, *mut u32) -> u32;
 
 // 关闭容器
 // ULONG DEVAPI SKF_CloseContainer(HCONTAINER hContainer)
@@ -154,27 +160,66 @@ impl DEVINFO {
         }
     }
 }
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ECCPUBLICKEYBLOB {
-    bit: u32,
-    x: [u8; 64],
-    y: [u8; 64],
+    pub BitLen: u32,
+    pub XCoordinate: [u8; 64],
+    pub YCoordinate: [u8; 64],
 }
 
 impl ECCPUBLICKEYBLOB {
     pub fn new() -> ECCPUBLICKEYBLOB {
         ECCPUBLICKEYBLOB {
-            bit: 256,
-            x: [0u8; 64],
-            y: [0u8; 64],
+            BitLen: 256,
+            XCoordinate: [0u8; 64],
+            YCoordinate: [0u8; 64],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ECCPRIVATEKEYBLOB {
+    pub BitLen: u32,
+    pub PrivateKey: [u8; 64],
+}
+
+impl ECCPRIVATEKEYBLOB {
+    pub fn new() -> ECCPRIVATEKEYBLOB {
+        ECCPRIVATEKEYBLOB {
+            BitLen: 256,
+            PrivateKey: [0u8; 64],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ECCCIPHERBLOB {
+    pub XCoordinate: [u8; 64],
+    pub YCoordinate: [u8; 64],
+    pub Hash: [u8; 32],
+    pub CipherLen: u32,
+    pub Cipher: [u8; 113],
+}
+
+impl ECCCIPHERBLOB {
+    pub fn new() -> ECCCIPHERBLOB {
+        ECCCIPHERBLOB {
+            XCoordinate: [0u8; 64],
+            YCoordinate: [0u8; 64],
+            Hash: [0u8; 32],
+            CipherLen: 0,
+            Cipher: [0u8; 113],
         }
     }
 }
 
 pub struct ECCSIGNATUREBLOB {
-    r: [u8; 64],
-    s: [u8; 64],
+    pub r: [u8; 64],
+    pub s: [u8; 64],
 }
 
 impl ECCSIGNATUREBLOB {
@@ -187,8 +232,8 @@ impl ECCSIGNATUREBLOB {
 
     pub fn to_string(&self) -> String {
         let mut str = String::from("");
-        let r = &self.r[31..63];
-        let s = &self.s[31..63];
+        let r = &self.r[32..];
+        let s = &self.s[32..];
         str.push_str(&hex::encode(r).to_uppercase());
         str.push_str(&hex::encode(s).to_uppercase());
         return str;
@@ -298,23 +343,46 @@ impl SKFApi {
         return 0;
     }
 
-    pub fn skf_hash(&mut self, data: &[u8], data_len: u32, hash: &mut [u8; 32]) -> u32 {
+    pub fn skf_hash(
+        &mut self,
+        data: &[u8],
+        data_len: u32,
+        hash: &mut [u8; 32],
+        pre_process: bool,
+        pubkey: Option<ECCPUBLICKEYBLOB>,
+    ) -> u32 {
         let mut ret: u32 = 0;
         let mut hash_len: u32 = 32;
         //密码杂凑算法标识
         let SGD_SM3: u32 = 0x00000001;
         let mut HASH_HANDLER: *mut c_void = null_mut();
+
         unsafe {
             let fn_skf_digest_init: Symbol<SKF_DigestInit> =
                 self.lib.get(b"SKF_DigestInit").unwrap();
-            ret = fn_skf_digest_init(
-                DEV_HANDLER,
-                SGD_SM3,
-                null_mut(),
-                null_mut(),
-                0,
-                &mut HASH_HANDLER,
-            );
+
+            match pubkey {
+                Some(key) => {
+                    ret = fn_skf_digest_init(
+                        DEV_HANDLER,
+                        SGD_SM3,
+                        &key,
+                        "1234567812345678".as_bytes().as_ptr() as *const c_void,
+                        16,
+                        &mut HASH_HANDLER,
+                    );
+                }
+                None => {
+                    ret = fn_skf_digest_init(
+                        DEV_HANDLER,
+                        SGD_SM3,
+                        null_mut(),
+                        null_mut(),
+                        0,
+                        &mut HASH_HANDLER,
+                    );
+                }
+            }
         }
         if ret != 0 {
             println!("skf_hash -> SKF_DigestInit fail, ret: {:x}", ret);
@@ -503,6 +571,25 @@ impl SKFApi {
                     data.as_mut_ptr() as *mut c_void,
                     data_len,
                 );
+            }
+        }
+        if ret != 0 {
+            return ret;
+        }
+        return 0;
+    }
+
+    pub fn skf_export_public_key(&mut self, sign: bool, pubkey: &mut ECCPUBLICKEYBLOB) -> u32 {
+        let mut ret: u32 = 0;
+
+        let mut len = mem::size_of::<ECCPUBLICKEYBLOB>() as u32;
+        unsafe {
+            let fn_skf_export_public_key: Symbol<SKF_ExportPublicKey> =
+                self.lib.get(b"SKF_ExportPublicKey").unwrap();
+            if sign {
+                ret = fn_skf_export_public_key(CON_HANDLER, 1, pubkey, &mut len);
+            } else {
+                ret = fn_skf_export_public_key(CON_HANDLER, 0, pubkey, &mut len);
             }
         }
         if ret != 0 {

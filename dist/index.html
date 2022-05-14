@@ -55,8 +55,9 @@
 
     invoke('generate_auth_data', {pin: pin, role: 3})
       .then((response) => {
-        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + response.data;
-        console.log(data);
+        var authData = response.data.replace(/\n/g,"\\n").replace(/\r/g,"")
+        console.log(authData);
+        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + authData;
         document.getElementById("result").innerText = data;
       })
       .catch((error) => {

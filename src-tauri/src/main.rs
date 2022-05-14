@@ -7,7 +7,7 @@ mod char_utils;
 mod skfapi;
 
 use crate::char_utils::*;
-use crate::skfapi::{SKFApi, DEVINFO, ECCSIGNATUREBLOB};
+use crate::skfapi::{SKFApi, DEVINFO, ECCSIGNATUREBLOB, ECCPUBLICKEYBLOB};
 
 use libc::{c_uchar, c_uint, strlen};
 use libloading::{Library, Symbol};
@@ -253,7 +253,7 @@ fn generate_auth_data(
 
     //对口令进行hash计算
     let mut cipher_hash = [0u8; 32];
-    ret = skf_api.skf_hash(data, data.len() as u32, &mut cipher_hash);
+    ret = skf_api.skf_hash(data, data.len() as u32, &mut cipher_hash, false, None);
     if ret != 0 {
         println!("Hash计算失败");
         return Err("口令Hash计算失败".to_string());
@@ -276,15 +276,27 @@ fn generate_auth_data(
     auth_data.push_str(&hex_random);
     auth_data.push_str("||");
     token_y.push_str(&hex_random);
-
     println!("token_y: {}", token_y);
+
+
+    //导出签名公钥
+    let mut pubkey  = ECCPUBLICKEYBLOB::new();
+    ret = skf_api.skf_export_public_key(true,  &mut pubkey);
+    if ret != 0 {
+        println!("导出签名公钥失败, ret: {:x}", ret);
+        return Err("导出签名公钥失败".to_string());
+    }
+
     let token_y_byte = token_y.as_bytes();
     let mut token_y_hash = [0u8; 32];
-    ret = skf_api.skf_hash(token_y_byte, token_y_byte.len() as u32, &mut token_y_hash);
+    ret = skf_api.skf_hash(token_y_byte, token_y_byte.len() as u32, &mut token_y_hash, true, Some(pubkey));
     if ret != 0 {
         println!("token哈希计算失败, ret: {:x}", ret);
         return Err("token哈希计算失败".to_string());
     }
+    let hex_token_y_hash = hex::encode(&token_y_hash).to_uppercase();
+    println!("token_y_hash: {}", hex_token_y_hash);
+
     let mut signature = ECCSIGNATUREBLOB::new();
     ret = skf_api.skf_sign(&token_y_hash, 32, &mut signature);
     if ret != 0 {
@@ -307,6 +319,7 @@ fn generate_auth_data(
     let cert_str = rust_arr_2_c_char(cert.to_vec());
     println!("cert_str: {}", cert_str);
     auth_data.push_str(&cert_str);
+    println!("auth data: {}", auth_data);
 
     Ok(InvokeResponse {
         code: 0,
