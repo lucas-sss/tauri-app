@@ -59,13 +59,18 @@ type SKF_DigestFinal = unsafe extern "stdcall" fn(*const c_void, *const c_void, 
 type SKF_OpenApplication =
     unsafe extern "stdcall" fn(*const c_void, *const c_char, *mut *mut c_void) -> u32;
 
-// 关闭应用
-// ULONG DEVAPI SKF_CloseApplication(HAPPLICATION hApplication)
-type SKF_CloseApplication = unsafe extern "stdcall" fn(*const c_void) -> u32;
-
 // 验证PIN码
 // ULONG DEVAPI SKF_VerifyPIN (HAPPLICATION hApplication, ULONG ulPINType, LPSTR szPIN, ULONG *pulRetryCount)
 type SKF_VerifyPIN = unsafe fn(*const c_void, u32, *const c_char, *mut u32) -> u32;
+
+// 修改PIN码
+// ULONG DEVAPI SKF_ChangePIN (HAPPLICATION hApplication, ULONG ulPINType, LPSTR szOldPin, LPSTR szNewPin, ULONG *pulRetryCount)
+type SKF_ChangePIN =
+    unsafe extern "stdcall" fn(*const c_void, u32, *const c_char, *const c_char, *mut u32) -> u32;
+
+// 关闭应用
+// ULONG DEVAPI SKF_CloseApplication(HAPPLICATION hApplication)
+type SKF_CloseApplication = unsafe extern "stdcall" fn(*const c_void) -> u32;
 
 // 打开容器
 // ULONG DEVAPI SKF_OpenContainer(HAPPLICATION hApplication, LPSTR szContainerName, HCONTAINER *phContainer)
@@ -524,6 +529,37 @@ impl SKFApi {
         }
 
         self.pin_verify_success = true;
+        return 0;
+    }
+
+    pub fn skf_change_pin(
+        &mut self,
+        old_pin_str: &str,
+        new_pin_str: &str,
+        retry_count: &mut u32,
+    ) -> u32 {
+        let mut ret: u32 = 0;
+
+        unsafe {
+            let mut old_pin = String::from(old_pin_str);
+            let mut new_pin = String::from(new_pin_str);
+            //动态库必须接收\0结束的字符串
+            old_pin.push('\0');
+            new_pin.push('\0');
+
+            let fn_skf_change_pin: Symbol<SKF_ChangePIN> = self.lib.get(b"SKF_ChangePIN").unwrap();
+            ret = fn_skf_change_pin(
+                APP_HANDLER,
+                1, //1:USER_TYPE, 0:ADMIN_TYPE
+                old_pin.as_mut_ptr() as *const c_char,
+                new_pin.as_mut_ptr() as *const c_char,
+                retry_count,
+            );
+        }
+
+        if ret != 0 {
+            return ret;
+        }
         return 0;
     }
 

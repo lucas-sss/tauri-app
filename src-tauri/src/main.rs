@@ -7,7 +7,7 @@ mod char_utils;
 mod skfapi;
 
 use crate::char_utils::*;
-use crate::skfapi::{SKFApi, DEVINFO, ECCSIGNATUREBLOB, ECCPUBLICKEYBLOB};
+use crate::skfapi::{SKFApi, DEVINFO, ECCPUBLICKEYBLOB, ECCSIGNATUREBLOB};
 
 use libc::{c_uchar, c_uint, strlen};
 use libloading::{Library, Symbol};
@@ -36,10 +36,10 @@ struct AppContext {}
 #[tauri::command]
 fn login(
     window: Window,
-    param: String,
+    pin: String,
     app_context: State<'_, AppContext>,
 ) -> Result<InvokeResponse, String> {
-    println!("param is: {}", param);
+    println!("pin is: {}", pin);
     let mut device_names = String::from("");
 
     let mut device_num: u32 = 0;
@@ -90,7 +90,7 @@ fn login(
     println!("打开应用成功");
 
     let mut retry_count: u32 = 0;
-    ret = skf_api.skf_verify_pin(&param, &mut retry_count);
+    ret = skf_api.skf_verify_pin(&pin, &mut retry_count);
     if ret != 0 {
         println!(
             "PIN码验证失败, ret: {:x}, 剩余重试次数: {}",
@@ -100,6 +100,9 @@ fn login(
         return Err(s.to_string());
     }
     println!("PIN码验证成功");
+    let mut user_pin = USER_PIN.lock().unwrap();
+    user_pin.clear();
+    user_pin.push_str(&pin);
 
     let con_name_str = String::from("Container");
     ret = skf_api.skf_open_container(&con_name_str);
@@ -184,6 +187,39 @@ fn get_mac(window: Window, skf_context: State<AppContext>) -> Result<InvokeRespo
     })
 }
 
+#[tauri::command]
+fn change_pin(
+    window: Window,
+    newpin: String,
+    skf_context: State<AppContext>,
+) -> Result<InvokeResponse, String> {
+    println!("change_pin -> newpin: {}", newpin);
+    let mut ret = 0;
+
+    let mut oldpin = USER_PIN.lock().unwrap();
+    let mut skf_api = SKF_API.lock().unwrap();
+
+    let mut retry_count = 6;
+    ret = skf_api.skf_change_pin(&oldpin, &newpin, &mut retry_count);
+    if ret != 0 {
+        println!(
+            "更改PIN码失败, ret: {:x}, 剩余重试次数: {}",
+            ret, retry_count
+        );
+        let s = format!("更改PIN码失败, 剩余重试次数: {}", retry_count);
+        return Err(s.to_string());
+    }
+
+    oldpin.clear();
+    oldpin.push_str(&newpin);
+
+    Ok(InvokeResponse {
+        code: 0,
+        message: String::from("success"),
+        data: String::from(""),
+    })
+}
+
 enum AdminLabel {
     SuperAdmin(u32),
     SystemAdmin(u32),
@@ -216,7 +252,7 @@ fn generate_auth_data(
     pin: String,
     app_context: State<'_, AppContext>,
 ) -> Result<InvokeResponse, String> {
-    println!("GenerateAuthData -> role: {}, pin: {}", role, pin);
+    println!("generate_auth_data -> role: {}, pin: {}", role, pin);
 
     let mut ret = 0;
     let data = pin.as_bytes();
@@ -278,10 +314,9 @@ fn generate_auth_data(
     token_y.push_str(&hex_random);
     println!("token_y: {}", token_y);
 
-
     //导出签名公钥
-    let mut pubkey  = ECCPUBLICKEYBLOB::new();
-    ret = skf_api.skf_export_public_key(true,  &mut pubkey);
+    let mut pubkey = ECCPUBLICKEYBLOB::new();
+    ret = skf_api.skf_export_public_key(true, &mut pubkey);
     if ret != 0 {
         println!("导出签名公钥失败, ret: {:x}", ret);
         return Err("导出签名公钥失败".to_string());
@@ -289,7 +324,13 @@ fn generate_auth_data(
 
     let token_y_byte = token_y.as_bytes();
     let mut token_y_hash = [0u8; 32];
-    ret = skf_api.skf_hash(token_y_byte, token_y_byte.len() as u32, &mut token_y_hash, true, Some(pubkey));
+    ret = skf_api.skf_hash(
+        token_y_byte,
+        token_y_byte.len() as u32,
+        &mut token_y_hash,
+        true,
+        Some(pubkey),
+    );
     if ret != 0 {
         println!("token哈希计算失败, ret: {:x}", ret);
         return Err("token哈希计算失败".to_string());
@@ -354,6 +395,7 @@ fn logout(window: Window, skf_context: State<AppContext>) -> Result<InvokeRespon
 extern crate lazy_static;
 lazy_static! {
     static ref SKF_API: Mutex<SKFApi> = Mutex::new(SKFApi::new());
+    static ref USER_PIN: Mutex<String> = Mutex::new(String::from(""));
     // static ref SKF_API: SKFApi = {
     //     let mut skfapi = SKFApi::new();
     //     skfapi
@@ -369,6 +411,7 @@ fn main() {
             login,
             generate_auth_data,
             get_mac,
+            change_pin,
             logout
         ])
         .run(tauri::generate_context!())

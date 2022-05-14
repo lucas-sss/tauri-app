@@ -11,11 +11,14 @@
   <label for="pinInput">PIN码</label>
   <input id="pinInput" type="text" name="pin" placeholder="请输入pin码" /> &emsp;
   <input type="button" value="登录" onclick="login()" /> &emsp;
-  <input type="button" value="获取mac" onclick="getMac()" /> &emsp;
-  <input type="button" value="生成登录数据" onclick="generateAuthData()" /> &emsp;
-  <input type="button" value="退出登录" onclick="logout()" /> &emsp;
+  <input type="button" value="退出登录" onclick="logout()" /> &emsp;<br /><br />
+  <input type="button" value="获取mac" onclick="getMac()" /> &emsp;<br /><br />
+  <input type="button" value="生成登录数据" onclick="generateAuthData()" /> &emsp;<br /><br />
+  <label for="pinInput">新PIN码</label>
+  <input id="newPinInput" type="text" name="newPin" placeholder="请输入新pin码" /> &emsp;
+  <input type="button" value="更新PIN码" onclick="changePin()" /> &emsp;<br /><br />
 
-  <div id="result" style="width: 200px;height: 10px; border: 1px; border-color: black; margin-top: 100px;"></div>
+  <div id="result" style="width: 200px;height: 10px; border: 1px; border-color: black; margin-top: 150px;"></div>
 </body>
 <script>
   const TAURI = window.__TAURI__;
@@ -28,13 +31,15 @@
     var pin = document.getElementById("pinInput").value;
     console.log("用户输入pin码: " + pin);
     if (pin.length != 6) {
-        alert("请输入6位PIN码");
-        return;
+      alert("请输入6位PIN码");
+      return;
     }
 
-    invoke('login', {param: pin})
+    invoke('login', {
+        pin: pin
+      })
       .then((response) => {
-        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + response.data;
+        var data = "code: " + response.code + ", message: " + response.message + ", data: " + response.data;
         console.log(data);
         document.getElementById("result").innerText = data;
       })
@@ -49,15 +54,18 @@
     var pin = document.getElementById("pinInput").value;
     console.log("用户输入pin码: " + pin);
     if (pin.length != 6) {
-        alert("请输入6位PIN码");
-        return;
+      alert("请输入6位PIN码");
+      return;
     }
 
-    invoke('generate_auth_data', {pin: pin, role: 3})
+    invoke('generate_auth_data', {
+        pin: pin,
+        role: 3
+      })
       .then((response) => {
-        var authData = response.data.replace(/\n/g,"\\n").replace(/\r/g,"")
+        var authData = response.data.replace(/\n/g, "\\n").replace(/\r/g, "")
         console.log(authData);
-        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + authData;
+        var data = "code: " + response.code + ", message: " + response.message + ", data: " + authData;
         document.getElementById("result").innerText = data;
       })
       .catch((error) => {
@@ -66,11 +74,35 @@
       })
   }
 
+  function changePin() {
+
+    var newPin = document.getElementById("newPinInput").value;
+    console.log("用户输入新pin码: " + newPin);
+    if (newPin.length != 6) {
+      alert("请输入6位新PIN码");
+      return;
+    }
+
+    invoke('change_pin', {
+        newpin: newPin
+      })
+      .then((response) => {
+        var data = "code: " + response.code + ", message: " + response.message + ", data: " + response.data;
+        console.log(data);
+        document.getElementById("result").innerText = data;
+      })
+      .catch((error) => {
+        console.error(error);
+        document.getElementById("result").innerText = error;
+      })
+
+  }
+
   function getMac() {
 
     invoke('get_mac')
       .then((response) => {
-        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + response.data;
+        var data = "code: " + response.code + ", message: " + response.message + ", data: " + response.data;
         console.log(data);
         document.getElementById("result").innerText = data;
       })
@@ -84,7 +116,7 @@
     // Invoke the command
     invoke('logout')
       .then((response) => {
-        var data = "code: "+ response.code + ", message: " + response.message + ", data: " + response.data;
+        var data = "code: " + response.code + ", message: " + response.message + ", data: " + response.data;
         console.log(data);
         document.getElementById("result").innerText = data;
       })
@@ -93,7 +125,6 @@
         document.getElementById("result").innerText = error;
       })
   }
-
 </script>
 
 </html>
