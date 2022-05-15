@@ -533,13 +533,13 @@ impl SKFApi {
         return 0;
     }
 
-
     pub fn skf_enum_container(&self, name_vec: &mut Vec<String>, device_num: &mut u32) -> u32 {
         let mut name_list = [0u8; 256];
         let mut len: u32 = 256;
         let mut ret: u32 = 0;
         unsafe {
-            let fn_skf_enum_container: Symbol<SKF_EnumContainer> = self.lib.get(b"SKF_EnumContainer").unwrap();
+            let fn_skf_enum_container: Symbol<SKF_EnumContainer> =
+                self.lib.get(b"SKF_EnumContainer").unwrap();
             ret = fn_skf_enum_container(APP_HANDLER, name_list.as_mut_ptr() as *mut i8, &mut len);
         }
 
