@@ -14,9 +14,12 @@
   <input type="button" value="退出登录" onclick="logout()" /> &emsp;<br /><br />
   <input type="button" value="获取mac" onclick="getMac()" /> &emsp;<br /><br />
   <input type="button" value="生成登录数据" onclick="generateAuthData()" /> &emsp;<br /><br />
-  <label for="pinInput">新PIN码</label>
+  <label for="newPinInput">新PIN码</label>
   <input id="newPinInput" type="text" name="newPin" placeholder="请输入新pin码" /> &emsp;
   <input type="button" value="更新PIN码" onclick="changePin()" /> &emsp;<br /><br />
+  <label for="requestUrl">请求URL</label>
+  <input id="requestUrl" type="text" name="reqUrl" placeholder="请输入请求url" /> &emsp;
+  <input type="button" value="验证UKEY" onclick="checkUkey()" /> &emsp;<br /><br />
 
   <div id="result" style="width: 200px;height: 10px; border: 1px; border-color: black; margin-top: 150px;"></div>
 </body>
@@ -34,7 +37,7 @@
       alert("请输入6位PIN码");
       return;
     }
-
+    let loginResp = {}
     invoke('login', {
         pin: pin
       })
@@ -42,11 +45,13 @@
         var data = "code: " + response.code + ", message: " + response.message + ", data: " + response.data;
         console.log(data);
         document.getElementById("result").innerText = data;
+        loginResp = response;
       })
       .catch((error) => {
         console.error(error);
         document.getElementById("result").innerText = error;
-      })
+      });
+    console.log("loginResp:" + loginResp.data)
   }
 
   function generateAuthData() {
@@ -101,6 +106,28 @@
   function getMac() {
 
     invoke('get_mac')
+      .then((response) => {
+        var data = "code: " + response.code + ", message: " + response.message + ", data: " + response.data;
+        console.log(data);
+        document.getElementById("result").innerText = data;
+      })
+      .catch((error) => {
+        console.error(error);
+        document.getElementById("result").innerText = error;
+      })
+  }
+
+  function checkUkey() {
+    var reqUrl = document.getElementById("requestUrl").value;
+    console.log("用户输入请求URL: " + reqUrl);
+    if (reqUrl == undefined || reqUrl.length == 0) {
+      alert("请输入请求URL");
+      return;
+    }
+
+    invoke('check_ukey', {
+        url: reqUrl
+      })
       .then((response) => {
         var data = "code: " + response.code + ", message: " + response.message + ", data: " + response.data;
         console.log(data);

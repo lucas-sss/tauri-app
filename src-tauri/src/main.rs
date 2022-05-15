@@ -33,6 +33,8 @@ static RET_REQ_URL_ROLE_ERR: u32 = 311;
 static RET_NOT_FOUND_DEVICE_ERR: u32 = 370;
 static RET_DEFAULT_PIN_ERR: u32 = 378;
 
+static RET_OPERATION_NOT_SUPPORT_WITH_UEKY_ERR: u32 = 401;
+
 #[derive(serde::Serialize)]
 struct InvokeResponse {
     code: u32,
@@ -217,7 +219,6 @@ fn login(
     })
 }
 
-
 #[tauri::command]
 fn change_pin(
     window: Window,
@@ -226,7 +227,7 @@ fn change_pin(
 ) -> Result<InvokeResponse, String> {
     println!("change_pin -> newpin: {}", newpin);
     //判断是否登录
-    let mut is_login = IS_LOGIN.lock().unwrap();
+    let is_login = IS_LOGIN.lock().unwrap();
     if !*is_login {
         println!("change_pin -> 设备未登录");
         return Ok(InvokeResponse {
@@ -311,10 +312,15 @@ fn generate_auth_data(
     app_context: State<'_, AppContext>,
 ) -> Result<InvokeResponse, String> {
     println!("generate_auth_data -> role: {}, pin: {}", role, pin);
+
+    let mut ret = 0;
+
     //判断是否登录
-    let mut is_login = IS_LOGIN.lock().unwrap();
+    let is_login = IS_LOGIN.lock().unwrap();
     if !*is_login {
         println!("generate_auth_data -> 设备未登录");
+        // 进行登录
+
         return Ok(InvokeResponse {
             code: RET_NOT_LOGIN_ERROR,
             message: String::from("未登录"),
@@ -322,7 +328,6 @@ fn generate_auth_data(
         });
     }
 
-    let mut ret = 0;
     let data = pin.as_bytes();
     let mut auth_data = String::from("");
     let mut token_y = String::from("");
@@ -478,10 +483,9 @@ fn logout(window: Window, skf_context: State<AppContext>) -> Result<InvokeRespon
     Ok(InvokeResponse {
         code: 0,
         message: String::from("success"),
-        data: String::from(""),
+        data: String::from("登录成功"),
     })
 }
-
 
 #[tauri::command]
 fn get_mac(window: Window, skf_context: State<AppContext>) -> Result<InvokeResponse, String> {
@@ -548,6 +552,70 @@ fn get_mac(window: Window, skf_context: State<AppContext>) -> Result<InvokeRespo
     })
 }
 
+#[tauri::command]
+fn check_ukey(
+    window: Window,
+    url: String,
+    skf_context: State<AppContext>,
+) -> Result<InvokeResponse, String> {
+    println!("check_ukey -> 请求url: {}", url);
+    let mut ret: u32 = 0;
+
+    //判断是否登录
+    let is_login = IS_LOGIN.lock().unwrap();
+    if !*is_login {
+        println!("generate_auth_data -> 设备未登录");
+        // 进行登录
+
+        return Ok(InvokeResponse {
+            code: RET_NOT_LOGIN_ERROR,
+            message: String::from("未登录"),
+            data: String::from(""),
+        });
+    }
+
+    let mut role = 0;
+    if url.starts_with("/sslvpn-backstage/superadmin") {
+        role = 1;
+    } else if url.starts_with("/sslvpn-backstage/Systemadmin") {
+        role = 2;
+    } else if url.starts_with("/sslvpn-backstage/securityadmin") {
+        role = 3;
+    } else if url.starts_with("/sslvpn-backstage/auditoradmin") {
+        role = 4;
+    } else {
+        return Ok(InvokeResponse {
+            code: RET_REQ_URL_ROLE_ERR,
+            message: String::from("请求URL标记错误"),
+            data: String::from(""),
+        });
+    }
+
+    let mut skf_api = SKF_API.lock().unwrap();
+    // 检测ukey和选择角色是否匹配
+    let mut dev_info = DEVINFO::new();
+    ret = skf_api.skf_get_dev_info(&mut dev_info);
+    if ret != 0 {
+        println!("获取设备信息失败, ret: {:x}", ret);
+        return Err("获取设备信息失败".to_string());
+    }
+    let label_name = rust_arr_2_c_char(dev_info.label.to_vec());
+    println!("UKEY角色: {}", label_name);
+    if role != convert_ukey_label(&label_name) {
+        return Ok(InvokeResponse {
+            code: RET_OPERATION_NOT_SUPPORT_WITH_UEKY_ERR,
+            message: String::from("当前UKE角色无此操作权限"),
+            data: String::from(""),
+        });
+    }
+
+    Ok(InvokeResponse {
+        code: 0,
+        message: String::from("success"),
+        data: String::from("当前请求与UKEY角色匹配"),
+    })
+}
+
 //全局静态变量
 #[macro_use]
 extern crate lazy_static;
@@ -572,6 +640,7 @@ fn main() {
             generate_auth_data,
             get_mac,
             change_pin,
+            check_ukey,
             logout
         ])
         .run(tauri::generate_context!())
